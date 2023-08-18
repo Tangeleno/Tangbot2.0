@@ -1,20 +1,16 @@
 ﻿//KonvaStage.vue
 <script lang="ts" setup>
-import {nextTick, onBeforeUnmount, onMounted, reactive, ref} from 'vue';
+import {nextTick, onBeforeUnmount, onMounted, PropType, reactive, ref} from 'vue';
 import Konva from "konva";
-import KonvaNode from "./KonvaNode.vue"; // Import the KonvaNode component
+import {TreeNode} from "@/types/TreeNode.ts";
+import KonvaNode from "@/components/KonvaNode.vue"; // Import the KonvaNode component
+import {nodeStore} from '@/stores';
 
 const props = defineProps({
   containerRef: {
-    type: Object,
+    type: Object as PropType<HTMLDivElement>,
     required: true
-  },
-  nodes: {
-    type: Object,
-    required: true
-  },
-  nodeWidth: Number,
-  nodeHeight: Number
+  }
 });
 
 const emit = defineEmits(['nodeIntersection']);
@@ -24,7 +20,7 @@ const configKonva = reactive({
   height: 200  // default values, will be updated
 });
 
-const stageRef = ref(null);
+const stageRef = ref<Konva.Stage | null>(null);
 const isShapeDragging = ref(false);
 const currentScale = ref(1);
 let isDragging = false;
@@ -34,9 +30,7 @@ const handleWheel = (event: WheelEvent) => {
   event.preventDefault();
 
   if (!stageRef.value) return;
-
-  const stage = stageRef.value.getStage();
-
+  const stage = (stageRef.value as any).getStage() as Konva.Stage;
   // Zoom in or out based on the deltaY value of the wheel event
   // Smaller deltaY values indicate zooming in and vice versa
   const scaleBy = 1.05;
@@ -55,7 +49,7 @@ const doDrag = (event: Konva.KonvaEventObject<MouseEvent>) => {
   const deltaX = event.evt.clientX - lastPos.x;
   const deltaY = event.evt.clientY - lastPos.y;
 
-  const stage = stageRef.value.getStage();
+  const stage = (stageRef.value as any).getStage() as Konva.Stage;
 
   stage.x(stage.x() + deltaX);
   stage.y(stage.y() + deltaY);
@@ -68,11 +62,11 @@ const doDrag = (event: Konva.KonvaEventObject<MouseEvent>) => {
 };
 const endDrag = () => {
   isDragging = false;
-  props.containerRef.style.cursor = 'grab';
+  props.containerRef!.style.cursor = 'grab';
 };
 
 const onShapeMouseOver = () => {
-  props.containerRef.style.cursor = 'pointer';
+  props.containerRef!.style.cursor = 'pointer';
 };
 
 const handleNodeDragEnd = (draggedNode) => {
@@ -81,13 +75,13 @@ const handleNodeDragEnd = (draggedNode) => {
 
   console.log('Checked for intersecting nodes, received', intersectingNode)
   if (intersectingNode) {
-    emit('nodeIntersection', {draggedNodeId:draggedNode.id(), intersectingNodeId:intersectingNode.id()});
+    emit('nodeIntersection', {draggedNodeId: draggedNode.id(), intersectingNodeId: intersectingNode.id()});
   }
 };
 
 const checkForNodeIntersections = (draggedNode) => {
   let intersectingShape = null;
-  const stage = stageRef.value.getStage();
+  const stage = (stageRef.value as any).getStage() as Konva.Stage;
   toggleChildListening(draggedNode, false);
   // Check the four corners of the draggedNode for intersections
   const corners = [
@@ -115,7 +109,7 @@ const checkForNodeIntersections = (draggedNode) => {
 };
 
 const onShapeMouseOut = () => {
-  props.containerRef.style.cursor = isShapeDragging.value ? 'grabbing' : 'grab';
+  props.containerRef!.style.cursor = isShapeDragging.value ? 'grabbing' : 'grab';
 };
 
 const handleShapeDrag = (status) => {
@@ -133,7 +127,7 @@ const startDrag = (event: Konva.KonvaEventObject<MouseEvent>) => {
   if (isShapeDragging.value) return; // Prevent stage dragging if a shape is being dragged
 
   isDragging = true;
-  props.containerRef.style.cursor = 'grabbing';
+  props.containerRef!.style.cursor = 'grabbing';
   lastPos = {
     x: event.evt.clientX,
     y: event.evt.clientY
@@ -150,30 +144,46 @@ const updateStageSize = () => {
 onMounted(() => {
   nextTick(() => {
     updateStageSize();
-    props.containerRef.addEventListener('wheel', handleWheel);
+    if (stageRef.value) {
+      const stage = (stageRef.value as any).getStage() as Konva.Stage;
+      stage.position({
+        x: configKonva.width / 2,
+        y: configKonva.height / 2
+      });
+      stage.draw();
+    }
+    props.containerRef!.addEventListener('wheel', handleWheel);
   });
   window.addEventListener('resize', updateStageSize);
 
 });
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateStageSize);
-  props.containerRef.removeEventListener('wheel', handleWheel);
+  props.containerRef!.removeEventListener('wheel', handleWheel);
 });
 </script>
 
 <template>
-  <v-stage ref="stageRef" :config="configKonva" @mousedown="startDrag" @mouseleave="endDrag"
+  <v-stage ref="stageRef" :config="configKonva" class="v-stage" @mousedown="startDrag" @mouseleave="endDrag"
            @mousemove="doDrag"
            @mouseup="endDrag">
     <v-layer>
-      <konva-node
-          :node="nodes"
-          :nodeHeight="nodeHeight"
-          :nodeWidth="nodeWidth"
-          @mouseout="onShapeMouseOut"
-          @mouseover="onShapeMouseOver"
-          @nodeDragEnd="handleNodeDragEnd"
-          @update:isShapeDragging="handleShapeDrag"/>
+      <template v-for="(node, key, index) in nodeStore.nodes" :key="node.id">
+        <konva-node
+            :node="node"
+            :nodeHeight="nodeStore.nodeHeight"
+            :nodeWidth="nodeStore.nodeWidth"
+            @mouseout="onShapeMouseOut"
+            @mouseover="onShapeMouseOver"
+            @nodeDragEnd="handleNodeDragEnd"
+            @update:isShapeDragging="handleShapeDrag"/>
+        <v-line
+            v-if="node.parentId"
+            :points="[nodeStore.nodes[node.parentId].x + nodeStore.nodeWidth, 
+                      nodeStore.nodes[node.parentId].y + nodeStore.nodeHeight / 2,
+                      node.x, node.y + nodeStore.nodeHeight / 2]"
+            stroke="gray"/>
+      </template>
     </v-layer>
   </v-stage>
 </template>

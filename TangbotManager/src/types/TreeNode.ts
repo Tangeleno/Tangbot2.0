@@ -2,12 +2,10 @@
     type: NodeType;
     id: string;
     name: string;
-    width?: number;
-    height?: number;
-    fill?: string;
-    children?: TreeNode[];
-    x?:number;
-    y?:number;
+    x: number;
+    y: number;
+    parentId?: string; // ID of the parent node
+    childrenIds?: string[]; // Array of IDs representing the children in order
 };
 
 type NodeInput = {

@@ -12,7 +12,8 @@
     --font-color: #303030;
     --character-selected-color: #0075c9;
     --code-background-color:rgba(0,0,0,0.1);
-    --code-color: #703f17
+    --code-color: #703f17;
+    --canvas-bg-color:#cfcfcf
 }
 
 #app[data-theme="dark"] {
@@ -29,7 +30,8 @@
     --font-color: #cfcfcf;
     --character-selected-color: #0155a5;
     --code-background-color:rgba(255,255,255,0.1);
-    --code-color: #dc762f
+    --code-color: #dc762f;
+    --canvas-bg-color:#101010
 }
 
 body {
