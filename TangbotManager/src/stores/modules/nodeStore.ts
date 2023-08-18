@@ -11,13 +11,12 @@ export const useNodeStore = defineStore({
         selectedNodeId: null,
         nodeHeight: 100,
         nodeWidth: 150,
-        horizontalNodeSpacing: 75,
-        verticalNodeSpacing: -25
-
+        horizontalNodeSpacing: 150,
+        verticalNodeSpacing: -40
     }),
     getters: {
         selectedNode(state) {
-            return this.nodes[state.selectedNodeId]
+            return state.nodes[state.selectedNodeId]
         }
     },
     actions: {

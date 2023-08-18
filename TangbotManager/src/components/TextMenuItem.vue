@@ -8,7 +8,7 @@
 </template>
 
 <script setup>
-import { onBeforeMount, onBeforeUnmount,onMounted, ref, useSlots, inject } from 'vue';
+import {inject, onBeforeMount, onBeforeUnmount, onMounted, ref, useSlots} from 'vue';
 import TextMenu from "./TextMenu.vue";
 
 const emit = defineEmits(['item-clicked']);
@@ -35,7 +35,7 @@ onBeforeUnmount(() => {
 const handleClick = (event) => {
   event.stopPropagation();
   if (props.action) {
-    emit('item-clicked',props.action);
+    emit('item-clicked', props.action);
   } else if (hasChildren.value) {
     if (active.value) {
       active.value = false;
@@ -74,8 +74,11 @@ const closeMenu = () => {
   z-index: 1; /* Ensures it appears above other content */
 }
 
-.menu > .text-menu-item > .menu.active{
-  display: block;
+
+.menu > .text-menu-item > .menu.active {
+  display: flex;
+  flex-direction: column;
+  min-width: max-content;
 }
 
 /* Styles for all subsequent nested menus */
@@ -86,12 +89,19 @@ const closeMenu = () => {
   left: 100%; /* Positions to the right side of the parent menu item */
   z-index: 1; /* Ensures it appears above other content */
 }
-.text-menu-item>span.text{
+
+.text-menu-item > .text {
   flex-grow: 1; /* Make the span grow to take up all available space */
   padding: 1em; /* Move padding to span */
-  display: block; /* Make it block-level */
+  margin: 0;
+  display: block; /* Make it block-level */;
+  text-align: center;
 }
-.text-menu-item:hover>span.text {
+
+.text-menu-item .text-menu-item {
+}
+
+.text-menu-item:hover > .text {
   background-color: var(--menu-item-hover-color);
 }
 </style>
