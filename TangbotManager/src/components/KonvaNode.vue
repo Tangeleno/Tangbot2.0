@@ -7,17 +7,17 @@
     <v-rect v-if="node.type === NodeType.Select"
             :fill="getFillColor(node.type)"
             :height="nodeHeight"
+            :skewX="skewXValue"
             :stroke="selected ? 'yellow' : 'black'"
             :strokeWidth="2"
-            :width="nodeWidth"
-            :skewX="skewXValue"/>
+            :width="nodeWidth"/>
     <v-rect v-if="node.type === NodeType.Sequence"
             :fill="getFillColor(node.type)"
             :height="nodeHeight"
+            :skewX="skewXValue"
             :stroke="selected ? 'yellow' : 'black'"
             :strokeWidth="2"
-            :width="nodeWidth"
-            :skewX="skewXValue"/>
+            :width="nodeWidth"/>
     <v-rect v-if="node.type === NodeType.Parallel"
             :fill="getFillColor(node.type)"
             :height="nodeHeight"
@@ -25,37 +25,37 @@
             :strokeWidth="2"
             :width="nodeWidth"/>
     <v-rect v-if="node.type === NodeType.RandomSelector"
+            :cornerRadius="10"
             :fill="getFillColor(node.type)"
             :height="nodeHeight"
+            :skewX="skewXValue"
             :stroke="selected ? 'yellow' : 'black'"
             :strokeWidth="2"
-            :width="nodeWidth"
-            :cornerRadius="10"
-            :skewX="skewXValue"/>
+            :width="nodeWidth"/>
 
     <!-- Decorator Nodes -->
     <v-line v-if="node.type === NodeType.Invert"
-            :points="[0, nodeHeight, nodeWidth/2, 0, nodeWidth, nodeHeight]"
-            :fill="getFillColor(node.type)"
             :closed="true"
+            :fill="getFillColor(node.type)"
+            :points="[0, nodeHeight, nodeWidth/2, 0, nodeWidth, nodeHeight]"
             :stroke="selected ? 'yellow' : 'black'"
             :strokeWidth="2"/>
     <v-line v-if="node.type === NodeType.Repeat"
-            :points="[0,0,nodeWidth,nodeHeight/2,0,nodeHeight]"
-            :fill="getFillColor(node.type)"
             :closed="true"
+            :fill="getFillColor(node.type)"
+            :points="[0,0,nodeWidth,nodeHeight/2,0,nodeHeight]"
             :stroke="selected ? 'yellow' : 'black'"
             :strokeWidth="2"/>
     <v-line v-if="node.type === NodeType.Retry"
-            :points="[0, nodeHeight/2, nodeWidth, 0, nodeWidth, nodeHeight]"
-            :fill="getFillColor(node.type)"
             :closed="true"
+            :fill="getFillColor(node.type)"
+            :points="[0, nodeHeight/2, nodeWidth, 0, nodeWidth, nodeHeight]"
             :stroke="selected ? 'yellow' : 'black'"
             :strokeWidth="2"/>
     <v-line v-if="node.type === NodeType.Loop"
-            :points="[0, nodeHeight, nodeWidth/2, 0, nodeWidth, nodeHeight]"
-            :fill="getFillColor(node.type)"
             :closed="true"
+            :fill="getFillColor(node.type)"
+            :points="[0, nodeHeight, nodeWidth/2, 0, nodeWidth, nodeHeight]"
             :stroke="selected ? 'yellow' : 'black'"
             :strokeWidth="2"/>
 
@@ -66,28 +66,28 @@
                :stroke="selected ? 'yellow' : 'black'"
                :strokeWidth="2"
                :x="nodeWidth / 2"
-               :y="nodeHeight / 2" />
+               :y="nodeHeight / 2"/>
     <v-ellipse v-if="node.type === NodeType.Wait"
                :fill="getFillColor(node.type)"
                :radius="{x: nodeWidth/2, y: nodeHeight/2}"
                :stroke="selected ? 'yellow' : 'black'"
                :strokeWidth="2"
                :x="nodeWidth / 2"
-               :y="nodeHeight / 2" />
+               :y="nodeHeight / 2"/>
     <v-ellipse v-if="node.type === NodeType.Failer"
-              :fill="getFillColor(node.type)"
-              :radius="{x: nodeWidth/2, y: nodeHeight/2}"
-              :stroke="selected ? 'yellow' : 'black'"
-              :strokeWidth="2"
-              :x="nodeWidth / 2"
-              :y="nodeHeight / 2" />
+               :fill="getFillColor(node.type)"
+               :radius="{x: nodeWidth/2, y: nodeHeight/2}"
+               :stroke="selected ? 'yellow' : 'black'"
+               :strokeWidth="2"
+               :x="nodeWidth / 2"
+               :y="nodeHeight / 2"/>
     <v-ellipse v-if="node.type === NodeType.Succeeder"
-              :fill="getFillColor(node.type)"
-              :radius="{x: nodeWidth/2, y: nodeHeight/2}"
-              :stroke="selected ? 'yellow' : 'black'"
-              :strokeWidth="2"
-              :x="nodeWidth / 2"
-              :y="nodeHeight / 2" />
+               :fill="getFillColor(node.type)"
+               :radius="{x: nodeWidth/2, y: nodeHeight/2}"
+               :stroke="selected ? 'yellow' : 'black'"
+               :strokeWidth="2"
+               :x="nodeWidth / 2"
+               :y="nodeHeight / 2"/>
 
     <!-- Render the node's name on the shape -->
     <v-text :fill="'#f7f7f7'"
@@ -104,8 +104,8 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, PropType } from 'vue';
-import { NodeDetails, NodeType, TreeNode } from "../types/TreeNode.ts";
+import {computed, PropType} from 'vue';
+import {NodeType, TreeNode} from "../types/TreeNode.ts";
 
 const props = defineProps({
   node: {
@@ -117,9 +117,7 @@ const props = defineProps({
   selected: Boolean
 });
 
-props.selected = props.selected || false;
-
-const emit = defineEmits(['update:isShapeDragging', 'mouseout', 'mouseover', 'nodeDragEnd']);
+const emit = defineEmits(['update:isShapeDragging', 'mouseout', 'mouseover', 'nodeDragEnd', 'nodeClick']);
 
 const skewXValue = computed(() => {
   if (props.node!.type === NodeType.Select || props.node!.type === NodeType.RandomSelector) return 0.15;

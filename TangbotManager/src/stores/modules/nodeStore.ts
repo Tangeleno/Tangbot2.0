@@ -21,7 +21,12 @@ export const useNodeStore = defineStore({
     },
     actions: {
         selectNode(nodeId) {
-            this.selectedNodeId = nodeId;
+            if (this.selectedNodeId == nodeId) {
+                this.selectedNodeId = null;
+            } else {
+                this.selectedNodeId = nodeId;
+            }
+
         },
         setupLayoutWatchers() {
             // Watch for changes in nodeHeight and regenerate layout
@@ -106,10 +111,10 @@ export const useNodeStore = defineStore({
             };
 
             let result = {canPlace: false, shouldConfirm: false, message: "an unknown error has occured"};
-            
+
             // Check if the possibleParent has the possibleChild as an ancestor.
             const loopWouldForm = hasAncestor(possibleParent, possibleChildNodeId);
-            
+
             if (loopWouldForm) {
                 result.message = "Unable to place node, a loop would be formed";
                 return result;

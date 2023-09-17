@@ -5,6 +5,8 @@ import Konva from "konva";
 import KonvaNode from "@/components/KonvaNode.vue"; // Import the KonvaNode component
 import {nodeStore} from '@/stores';
 import {NodeType, TreeNode} from "@/types/TreeNode.ts";
+import Shape = Konva.Shape;
+import Group = Konva.Group;
 
 const props = defineProps({
   containerRef: {
@@ -69,44 +71,299 @@ const onShapeMouseOver = () => {
   props.containerRef!.style.cursor = 'pointer';
 };
 
-const handleNodeDragEnd = (draggedNode) => {
+const handleNodeDragEnd = (draggedShape) => {
   // Check for intersections with other nodes
-  const intersectingNode = checkForNodeIntersections(draggedNode);
+  const intersectingNode = checkForNodeIntersections(draggedShape);
 
-  console.log('Checked for intersecting nodes, received', intersectingNode)
   if (intersectingNode) {
-    emit('nodeIntersection', {draggedNodeId: draggedNode.id(), intersectingNodeId: intersectingNode.id()});
+    emit('nodeIntersection', {draggedNodeId: draggedShape.id(), intersectingNodeId: intersectingNode.id()});
+  } else {
+    //get the TreeNode based on id
+    const draggedNode = nodeStore.nodes[draggedShape.id()]
+    if (draggedNode.parentId) {
+      const parentNode = nodeStore.nodes[draggedNode.parentId]
+      const sortedChildren = [...parentNode.childrenIds].sort((a, b) => nodeStore.nodes[a].y - nodeStore.nodes[b].y);
+      //check if the arrays are equal
+      let areEqual = true;
+      for (let i = 0; i < sortedChildren.length; i++) {
+        if (parentNode.childrenIds![i] !== sortedChildren[i]) {
+          areEqual = false;
+          break;
+        }
+      }
+      if (!areEqual) {
+        parentNode.childrenIds = sortedChildren;
+        //redo the tree layout for the parent node
+        nodeStore.applyTreeLayout(parentNode.id)
+      }
+    }
+
   }
 };
 
-const checkForNodeIntersections = (draggedNode) => {
+const checkForNodeIntersections = (draggedShape: Group) => {
   let intersectingShape = null;
   const stage = (stageRef.value as any).getStage() as Konva.Stage;
-  toggleChildListening(draggedNode, false);
-  // Check the four corners of the draggedNode for intersections
-  const corners = [
-    {x: draggedNode.getClientRect().x, y: draggedNode.getClientRect().y},
-    {x: draggedNode.getClientRect().x + draggedNode.getClientRect().width, y: draggedNode.getClientRect().y},
-    {x: draggedNode.getClientRect().x, y: draggedNode.getClientRect().y + draggedNode.getClientRect().height},
-    {
-      x: draggedNode.getClientRect().x + draggedNode.getClientRect().width,
-      y: draggedNode.getClientRect().y + draggedNode.getClientRect().height
-    }
-  ];
 
-  for (const corner of corners) {
-    intersectingShape = stage.getIntersection(corner);
-    if (intersectingShape && intersectingShape !== draggedNode) {
-      break
+  //iterate over all the other groups in the stage
+  for (const otherGroup: Group of stage.find('Group')) {
+    //confirm it's not the same node
+    if (draggedShape.id() === otherGroup.id())
+      continue;
+    //do bounding box check
+    if (boundingBoxesCollide(draggedShape, otherGroup)) {
+      //do more detailed check
+      if (trueShapesIntersect(draggedShape, otherGroup)) {
+        return otherGroup;
+      }
     }
-  }
-  toggleChildListening(draggedNode, true);
-  //traverse up the intersected shape until we find our group node
-  while (intersectingShape && intersectingShape.parent && intersectingShape.getType() !== 'Group') {
-    intersectingShape = intersectingShape.parent;
   }
   return intersectingShape;
 };
+
+function trueShapesIntersect(draggedShape: Group, otherGroup: Group) {
+  // Get the actual shape (excluding text) from both groups
+  const draggedActualShape = getShape(draggedShape) as Shape;
+  const otherActualShape = getShape(otherGroup) as Shape;
+
+  // Determine the shape type based on the Konva shape type
+  const draggedShapeType = draggedActualShape.getClassName();
+  const otherGroupShapeType = otherActualShape.getClassName();
+
+  // Check for ellipse-ellipse intersection
+  if (draggedShapeType === 'Ellipse' && otherGroupShapeType === 'Ellipse') {
+    return ellipseEllipseIntersect(draggedActualShape as Konva.Ellipse, otherActualShape as Konva.Ellipse);
+  }
+
+  // Check for polygon-polygon intersection
+  if ((draggedShapeType === 'Line' || draggedShapeType === 'Rect') &&
+      (otherGroupShapeType === 'Line' || otherGroupShapeType === 'Rect')) {
+    return polygonPolygonIntersect(draggedActualShape, otherActualShape);
+  }
+
+  // Check for ellipse-polygon intersection
+  if (draggedShapeType === 'Ellipse' && (otherGroupShapeType === 'Line' || otherGroupShapeType === 'Rect')) {
+    return ellipsePolygonIntersect(draggedActualShape as Konva.Ellipse, otherActualShape);
+  }
+
+  // Check for polygon-ellipse intersection (reverse of the above)
+  if ((draggedShapeType === 'Line' || draggedShapeType === 'Rect') && otherGroupShapeType === 'Ellipse') {
+    return ellipsePolygonIntersect(otherActualShape as Konva.Ellipse, draggedActualShape);
+  }
+
+  // No intersections found
+  return false;
+}
+
+// Helper function to check if a point is inside an ellipse
+function pointInsideEllipse(point, ellipse) {
+  const dx = point.x - ellipse.x();
+  const dy = point.y - ellipse.y();
+  const rx = ellipse.radiusX();
+  const ry = ellipse.radiusY();
+  return (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1;
+}
+
+// Helper function to check if a line segment intersects with an ellipse
+function lineIntersectsEllipse(p0, p1, ellipse) {
+  // Convert the problem into checking the line segment with the unit circle
+  const scaleX = 1 / ellipse.radiusX();
+  const scaleY = 1 / ellipse.radiusY();
+  const scaledP0 = {x: (p0.x - ellipse.x()) * scaleX, y: (p0.y - ellipse.y()) * scaleY};
+  const scaledP1 = {x: (p1.x - ellipse.x()) * scaleX, y: (p1.y - ellipse.y()) * scaleY};
+
+  // Represent the line segment as a parametric equation in terms of t
+  const dx = scaledP1.x - scaledP0.x;
+  const dy = scaledP1.y - scaledP0.y;
+
+  // Coefficients for the quadratic equation
+  const a = dx * dx + dy * dy;
+  const b = 2 * (scaledP0.x * dx + scaledP0.y * dy);
+  const c = scaledP0.x * scaledP0.x + scaledP0.y * scaledP0.y - 1;  // -1 because it's a unit circle
+
+  // Calculate the discriminant
+  const discriminant = b * b - 4 * a * c;
+
+  // If the discriminant is negative, no intersection
+  if (discriminant < 0) {
+    return false;
+  }
+
+  // Calculate the two possible values of t
+  const t1 = (-b - Math.sqrt(discriminant)) / (2 * a);
+  const t2 = (-b + Math.sqrt(discriminant)) / (2 * a);
+
+  // Check if any solution for t lies in the interval [0, 1]
+  if ((t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1)) {
+    return true;
+  }
+
+  return false;
+}
+
+function ellipsePolygonIntersect(ellipse: Konva.Ellipse, polygon: Konva.Shape) {
+  const vertices = getVerticesFromKonva(polygon);
+
+  // Check if any vertex of the polygon is inside the ellipse
+  for (const vertex of vertices) {
+    if (pointInsideEllipse(vertex, ellipse)) {
+      return true;
+    }
+  }
+
+  // Check if any edge of the polygon intersects the ellipse
+  for (let i = 0; i < vertices.length; i++) {
+    const p0 = vertices[i];
+    const p1 = vertices[(i + 1) % vertices.length];
+    if (lineIntersectsEllipse(p0, p1, ellipse)) {
+      return true;
+    }
+  }
+
+  // No intersections found
+  return false;
+}
+
+function getShape(group: Group) {
+  // Find and return the child in the group that isn't text
+  for (const child of group.getChildren()) {
+    if (child.getType() !== 'Text') {
+      return child;
+    }
+  }
+  return null;
+}
+
+function ellipseEllipseIntersect(ellipse1: Konva.Ellipse, ellipse2: Konva.Ellipse) {
+  // Get properties of the first ellipse
+  const center1 = {x: ellipse1.x(), y: ellipse1.y()};
+  const a1 = ellipse1.radiusX();
+  const b1 = ellipse1.radiusY();
+
+  // Get properties of the second ellipse
+  const center2 = {x: ellipse2.x(), y: ellipse2.y()};
+  const a2 = ellipse2.radiusX();
+  const b2 = ellipse2.radiusY();
+
+  // Sample several points on the perimeter of the first ellipse
+  for (let theta = 0; theta < 2 * Math.PI; theta += 0.1) {
+    const x = center1.x + a1 * Math.cos(theta);
+    const y = center1.y + b1 * Math.sin(theta);
+
+    // Check if the point lies inside the second ellipse
+    if ((Math.pow(x - center2.x, 2) / Math.pow(a2, 2)) + (Math.pow(y - center2.y, 2) / Math.pow(b2, 2)) <= 1) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Helper function to get the normal of an edge
+function getNormal(p0, p1) {
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
+  return {x: dy, y: -dx};  // Perpendicular vector
+}
+
+// Helper function to project a polygon onto an axis
+function projectPolygon(axis, polygon) {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const vertex of polygon) {
+    const dot = (vertex.x * axis.x) + (vertex.y * axis.y);
+    min = Math.min(min, dot);
+    max = Math.max(max, dot);
+  }
+  return {min, max};
+}
+
+// Helper function to check if projections overlap
+function isOverlap(proj1, proj2) {
+  return proj1.max > proj2.min && proj2.max > proj1.min;
+}
+
+// Helper function to get the vertices from a Konva.Line shape
+function getVerticesFromKonva(shape: Konva.Shape) {
+  if (shape instanceof Konva.Line) {
+    const flatPoints = shape.points();
+    const vertices = [];
+    for (let i = 0; i < flatPoints.length; i += 2) {
+      vertices.push({x: flatPoints[i], y: flatPoints[i + 1]});
+    }
+    return vertices;
+  } else if (shape instanceof Konva.Rect) {
+    const x = shape.x();
+    const y = shape.y();
+    const width = shape.width();
+    const height = shape.height();
+    const skewX = shape.skewX();
+    return [
+      {x: x, y: y},
+      {x: x + width + skewX, y: y},
+      {x: x + width, y: y + height},
+      {x: x + skewX, y: y + height}
+    ];
+  }
+  return [];
+}
+
+function polygonPolygonIntersect(konvaPolygonA: Shape, konvaPolygonB: Shape) {
+  const polygonA = getVerticesFromKonva(konvaPolygonA);
+  const polygonB = getVerticesFromKonva(konvaPolygonB);
+  // Get the edges of the polygons
+  const edgesA = polygonA.length;
+  const edgesB = polygonB.length;
+
+  // Check all the edges of polygonA
+  for (let i = 0; i < edgesA; i++) {
+    const p0 = polygonA[i];
+    const p1 = polygonA[(i + 1) % edgesA];
+    const normal = getNormal(p0, p1);
+    const projA = projectPolygon(normal, polygonA);
+    const projB = projectPolygon(normal, polygonB);
+    if (!isOverlap(projA, projB)) {
+      return false;
+    }
+  }
+
+  // Check all the edges of polygonB
+  for (let i = 0; i < edgesB; i++) {
+    const p0 = polygonB[i];
+    const p1 = polygonB[(i + 1) % edgesB];
+    const normal = getNormal(p0, p1);
+    const projA = projectPolygon(normal, polygonA);
+    const projB = projectPolygon(normal, polygonB);
+    if (!isOverlap(projA, projB)) {
+      return false;
+    }
+  }
+
+  // All projections overlap
+  return true;
+}
+
+function boundingBoxesCollide(draggedShape: Group, otherGroup: Group) {
+  // Get the rectangle of the dragged shape
+  let draggedRectangle = draggedShape.getClientRect();
+  // Get the rectangle of the other group
+  let otherRectangle = otherGroup.getClientRect();
+
+  // Check if one rectangle is to the left of the other
+  if (draggedRectangle.x + draggedRectangle.width < otherRectangle.x ||
+      otherRectangle.x + otherRectangle.width < draggedRectangle.x) {
+    return false;
+  }
+
+  // Check if one rectangle is above the other
+  if (draggedRectangle.y + draggedRectangle.height < otherRectangle.y ||
+      otherRectangle.y + otherRectangle.height < draggedRectangle.y) {
+    return false;
+  }
+
+  // If none of the above conditions are met, the bounding boxes collide
+  return true;
+}
 
 const onShapeMouseOut = () => {
   props.containerRef!.style.cursor = isShapeDragging.value ? 'grabbing' : 'grab';
@@ -170,8 +427,8 @@ const centerAndZoomStage = () => {
   const scale = Math.min(scaleX, scaleY);
 
   // 4. Apply the transformation
-  stage.position({ x: -centerX * scale + configKonva.width / 2, y: -centerY * scale + configKonva.height / 2 });
-  stage.scale({ x: scale, y: scale });
+  stage.position({x: -centerX * scale + configKonva.width / 2, y: -centerY * scale + configKonva.height / 2});
+  stage.scale({x: scale, y: scale});
   stage.draw();
 };
 
@@ -179,15 +436,15 @@ const handleNodeClick = (nodeId) => {
   nodeStore.selectNode(nodeId);
 };
 
-const generateBezierPathForNode = (node:TreeNode) => {
+const generateBezierPathForNode = (node: TreeNode) => {
   if (!node.parentId) return "";  // Return empty if there's no parent
 
   const parentNode = nodeStore.nodes[node.parentId];
   let start, end, _;
-  
+
 
   // Determine the start point based on the parent node's type
-  switch(parentNode.type) {
+  switch (parentNode.type) {
     case NodeType.Select:
     case NodeType.RandomSelector:
       [start, _] = parallelogramStartEndPoints(parentNode, 0.15);
@@ -220,7 +477,7 @@ const generateBezierPathForNode = (node:TreeNode) => {
   }
 
   // Determine the end point based on the current node's type
-  switch(node.type) {
+  switch (node.type) {
     case NodeType.Select:
     case NodeType.RandomSelector:
       [_, end] = parallelogramStartEndPoints(node, 0.15);
@@ -256,6 +513,7 @@ const generateBezierPathForNode = (node:TreeNode) => {
   const horizontalOffset = 30;  // Adjust as needed
   return generateCubicBezierPath(start, end, horizontalOffset);
 }
+
 function generateCubicBezierPath(start, end, horizontalOffset) {
   // Calculate the mid-point
   const mid = {
@@ -285,6 +543,7 @@ function generateCubicBezierPath(start, end, horizontalOffset) {
 
   return `M ${start.x} ${start.y} C ${cp1.x} ${cp1.y} ${cp2.x} ${cp2.y} ${mid.x} ${mid.y} C ${cp3.x} ${cp3.y} ${cp4.x} ${cp4.y} ${end.x} ${end.y}`;
 }
+
 function rectangleStartEndPoints(node) {
   const start = {x: node.x + nodeStore.nodeWidth, y: node.y + nodeStore.nodeHeight / 2};
   const end = {x: node.x, y: node.y + nodeStore.nodeHeight / 2};
@@ -299,8 +558,8 @@ function triangleStartEndPoints(node) {
   const endXAdjustment = node.x + halfWidth * 0.5;
 
   return [
-    { x: node.x + startXAdjustment, y: commonY },
-    { x: endXAdjustment, y: commonY }
+    {x: node.x + startXAdjustment, y: commonY},
+    {x: endXAdjustment, y: commonY}
   ];
 }
 
@@ -309,8 +568,8 @@ function sideTriangleStartEndPoints(node) {
 
 
   return [
-    { x: node.x+nodeStore.nodeWidth, y: commonY },
-    { x: node.x, y: commonY }
+    {x: node.x + nodeStore.nodeWidth, y: commonY},
+    {x: node.x, y: commonY}
   ];
 }
 
@@ -322,8 +581,8 @@ function parallelogramStartEndPoints(node, sX) {
   const commonY = node.y + nodeStore.nodeHeight / 2;
 
   return [
-    { x: node.x + nodeStore.nodeWidth + skewAdjustment, y: commonY },  // Start point on the right edge
-    { x: node.x + skewAdjustment, y: commonY }  // End point on the left edge
+    {x: node.x + nodeStore.nodeWidth + skewAdjustment, y: commonY},  // Start point on the right edge
+    {x: node.x + skewAdjustment, y: commonY}  // End point on the left edge
   ];
 }
 
@@ -331,15 +590,20 @@ function ellipseStartEndPoints(node) {
   const halfHeight = nodeStore.nodeHeight / 2;
 
   return [
-    { x: node.x + nodeStore.nodeWidth, y: node.y - halfHeight },  // Start point on the right side
-    { x: node.x, y: node.y + halfHeight }  // End point on the left side
+    {x: node.x + nodeStore.nodeWidth, y: node.y - halfHeight},  // Start point on the right side
+    {x: node.x, y: node.y + halfHeight}  // End point on the left side
   ];
+}
+
+const redrawStage = () => {
+  const stage = (stageRef.value as any).getStage() as Konva.Stage;
+  stage.draw();
 }
 
 onMounted(() => {
   nextTick(() => {
     updateStageSize();
-    
+
     if (stageRef.value) {
       centerAndZoomStage();
     }
@@ -353,7 +617,7 @@ onBeforeUnmount(() => {
   props.containerRef!.removeEventListener('wheel', handleWheel);
 });
 
-defineExpose({centerAndZoomStage})
+defineExpose({centerAndZoomStage, redrawStage})
 
 </script>
 
